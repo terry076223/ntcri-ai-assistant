@@ -21,13 +21,22 @@
   // ── 狀態變數 ──
   var currentBot = null, chatHistory = [], pendingImageBase64 = '';
 
-  // ── 工具函式 ──
-  function getBots(){
-    try{ var s=localStorage.getItem('ntcri_ai_bots'); return s?JSON.parse(s):null; }catch(e){return null;}
-  }
-  function getActiveBots(){
-    var bots=getBots()||DEFAULT_BOTS;
-    return bots.filter(function(b){return b.active;});
+  // ── Bot 設定讀取（優先順序：bots-config.json → localStorage → DEFAULT_BOTS）──
+  var CONFIG_URL = window.AI_WIDGET_CONFIG_URL || 'bots-config.json';
+  async function getBotsConfig(){
+    try{
+      var res=await fetch(CONFIG_URL);
+      if(res.ok){
+        var cfg=await res.json();
+        var list=cfg.bots||cfg; // 支援新格式 {bots:[...]} 和舊格式 [...]
+        if(Array.isArray(list)&&list.length) return list;
+      }
+    }catch(e){}
+    try{
+      var s=localStorage.getItem('ntcri_ai_bots');
+      if(s){ var d=JSON.parse(s); if(Array.isArray(d)&&d.length) return d; }
+    }catch(e){}
+    return DEFAULT_BOTS;
   }
   function escForJSON(s){
     return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\t/g,'\\t');
@@ -175,8 +184,9 @@
     // Bot 選擇 Modal
     var navBtn=document.getElementById('aiNavBtn');
     if(navBtn){
-      navBtn.addEventListener('click',function(){
-        var bots=getActiveBots();
+      navBtn.addEventListener('click',async function(){
+        var allBots=await getBotsConfig();
+        var bots=allBots.filter(function(b){return b.active;});
         var grid=document.getElementById('botGrid');
         grid.innerHTML='';
         if(bots.length===0){

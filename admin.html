@@ -281,7 +281,49 @@ a{text-decoration:none;color:inherit;}
         </thead>
         <tbody id="botTableBody"></tbody>
       </table>
-      <button class="add-btn" id="addBotBtn">+ 新增機器人</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+        <button class="add-btn" id="addBotBtn">+ 新增機器人</button>
+        <button class="btn-save" id="pushBotsBtn" style="padding:7px 16px;font-size:13px;">🚀 儲存並推送到 GitHub</button>
+        <button class="edit-btn" id="exportBotsBtn" style="padding:7px 16px;font-size:13px;">📥 下載 bots-config.json</button>
+      </div>
+      <div class="pwd-msg" id="pushMsg" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- GitHub 推送設定 -->
+    <div class="card-sec">
+      <h2>🐙 GitHub 推送設定</h2>
+      <div class="notice">
+        設定後，每次在上方按「🚀 儲存並推送到 GitHub」，設定會直接寫入 GitHub，所有使用者立即生效（無需手動下載上傳）。<br>
+        <strong>同一個 GitHub 檔案也可以給其他網站使用</strong>，只要那個網站的程式碼指向這個 JSON 網址即可。
+      </div>
+      <div class="form-group">
+        <label>GitHub Personal Access Token（Fine-grained 或 Classic）</label>
+        <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"/>
+        <div class="form-hint">需有 <strong>repo / Contents: Read & Write</strong> 權限。在 GitHub → Settings → Developer settings → Personal access tokens 建立。</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label>GitHub 帳號（Owner）</label>
+          <input type="text" id="ghOwner" placeholder="your-username"/>
+        </div>
+        <div class="form-group">
+          <label>Repository 名稱</label>
+          <input type="text" id="ghRepo" placeholder="ntcri-ai-assistant"/>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label>Branch</label>
+          <input type="text" id="ghBranch" placeholder="main"/>
+        </div>
+        <div class="form-group">
+          <label>檔案路徑</label>
+          <input type="text" id="ghPath" placeholder="bots-config.json"/>
+        </div>
+      </div>
+      <div class="form-hint" id="ghRawUrl" style="margin-top:4px;word-break:break-all;color:#618137;"></div>
+      <button class="btn-save" id="saveGhBtn" style="margin-top:10px;">儲存 GitHub 設定</button>
+      <div class="pwd-msg" id="ghSaveMsg"></div>
     </div>
 
     <!-- 資料儲存設定 -->
@@ -484,16 +526,39 @@ var DEFAULT_BOTS = [
   {id:'bot-004',name:'活動查詢助手',icon:'📅',description:'查詢展覽、活動與課程相關資訊',active:true,apiUrl:'',apiToken:'',customHeaders:'',requestTemplate:'{"contents":[{"parts":[{"text":"{{message}}"}]}]}',responseField:'candidates.0.content.parts.0.text'}
 ];
 
-function getPwd(){ return localStorage.getItem('ntcri_admin_pwd')||DEFAULT_PWD; }
-function getBots(){
-  try{ var s=localStorage.getItem('ntcri_ai_bots'); return s?JSON.parse(s):JSON.parse(JSON.stringify(DEFAULT_BOTS)); }
-  catch(e){ return JSON.parse(JSON.stringify(DEFAULT_BOTS)); }
+// 從 bots-config.json 載入（密碼 + Bot 設定）
+var _botsCache = null;
+var _remotePassword = null;
+async function loadBotsConfig(){
+  try{
+    var res=await fetch('bots-config.json?t='+Date.now());
+    if(res.ok){
+      var cfg=await res.json();
+      if(cfg&&cfg.bots&&cfg.bots.length){
+        _botsCache=cfg.bots;
+        if(cfg.adminPassword) _remotePassword=cfg.adminPassword;
+        return cfg.bots;
+      }
+    }
+  }catch(e){}
+  try{
+    var s=localStorage.getItem('ntcri_ai_bots');
+    if(s){ var d=JSON.parse(s); if(Array.isArray(d)&&d.length){ _botsCache=d; return d; } }
+  }catch(e){}
+  _botsCache=JSON.parse(JSON.stringify(DEFAULT_BOTS));
+  return _botsCache;
 }
-function saveBots(bots){ localStorage.setItem('ntcri_ai_bots',JSON.stringify(bots)); }
+function getPwd(){
+  return _remotePassword || localStorage.getItem('ntcri_admin_pwd') || DEFAULT_PWD;
+}
+function getBots(){ return _botsCache||JSON.parse(JSON.stringify(DEFAULT_BOTS)); }
+function saveBots(bots){ _botsCache=bots; localStorage.setItem('ntcri_ai_bots',JSON.stringify(bots)); }
 function eid(id){ return document.getElementById(id); }
 function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ─── LOGIN ───
+// 頁面載入時先抓 bots-config.json（取得共用密碼與 Bot 設定）
+loadBotsConfig();
 eid('loginPwd').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
 eid('loginBtn').addEventListener('click',login);
 function login(){
@@ -503,7 +568,7 @@ function login(){
     eid('adminWrap').style.display='block';
     eid('gasUrlInput').value=getGasUrl();
     updateStorageStatusBar();
-    renderBots();
+    loadBotsConfig().then(function(){ renderBots(); });
     renderFeedback();
   } else {
     eid('loginErr').style.display='block';
@@ -670,9 +735,98 @@ eid('pwdSaveBtn').addEventListener('click',function(){
     msg.className='pwd-msg err'; msg.style.display='block'; msg.textContent='兩次輸入的新密碼不一致';
     return;
   }
+  _remotePassword=nw;
   localStorage.setItem('ntcri_admin_pwd',nw);
-  msg.className='pwd-msg ok'; msg.style.display='block'; msg.textContent='✅ 密碼已更新';
+  msg.className='pwd-msg ok'; msg.style.display='block'; msg.textContent='✅ 密碼已更新，請至「機器人管理」按「🚀 儲存並推送到 GitHub」讓新密碼生效給所有人';
   eid('pwdOld').value=''; eid('pwdNew').value=''; eid('pwdConfirm').value='';
+});
+
+// ─── GitHub 設定 ───
+function getGhCfg(){
+  return {
+    token: localStorage.getItem('ntcri_gh_token')||'',
+    owner: localStorage.getItem('ntcri_gh_owner')||'',
+    repo:  localStorage.getItem('ntcri_gh_repo')||'',
+    branch:localStorage.getItem('ntcri_gh_branch')||'main',
+    path:  localStorage.getItem('ntcri_gh_path')||'bots-config.json'
+  };
+}
+function updateGhRawUrl(){
+  var c=getGhCfg();
+  var el=eid('ghRawUrl');
+  if(c.owner&&c.repo){
+    var url='https://raw.githubusercontent.com/'+c.owner+'/'+c.repo+'/'+c.branch+'/'+c.path;
+    el.innerHTML='📎 其他網站可用此網址抓取設定：<br><code>'+url+'</code>';
+  } else {
+    el.textContent='';
+  }
+}
+(function initGhFields(){
+  var c=getGhCfg();
+  eid('ghToken').value=c.token;
+  eid('ghOwner').value=c.owner;
+  eid('ghRepo').value=c.repo;
+  eid('ghBranch').value=c.branch;
+  eid('ghPath').value=c.path;
+  updateGhRawUrl();
+  ['ghOwner','ghRepo','ghBranch','ghPath'].forEach(function(id){
+    eid(id).addEventListener('input',updateGhRawUrl);
+  });
+})();
+eid('saveGhBtn').addEventListener('click',function(){
+  localStorage.setItem('ntcri_gh_token', eid('ghToken').value.trim());
+  localStorage.setItem('ntcri_gh_owner', eid('ghOwner').value.trim());
+  localStorage.setItem('ntcri_gh_repo',  eid('ghRepo').value.trim());
+  localStorage.setItem('ntcri_gh_branch',eid('ghBranch').value.trim()||'main');
+  localStorage.setItem('ntcri_gh_path',  eid('ghPath').value.trim()||'bots-config.json');
+  var msg=eid('ghSaveMsg');
+  msg.className='pwd-msg ok'; msg.style.display='block';
+  msg.textContent='✅ GitHub 設定已儲存';
+  updateGhRawUrl();
+});
+
+// ─── 推送到 GitHub ───
+async function pushToGitHub(){
+  var c=getGhCfg();
+  if(!c.token||!c.owner||!c.repo){
+    return {ok:false, msg:'請先填寫 GitHub 設定（Token、帳號、Repository）'};
+  }
+  var cfg={ adminPassword: getPwd(), bots: getBots() };
+  var json=JSON.stringify(cfg,null,2);
+  var apiBase='https://api.github.com/repos/'+c.owner+'/'+c.repo+'/contents/'+c.path;
+  var headers={ 'Authorization':'token '+c.token, 'Content-Type':'application/json' };
+  // 取得現有檔案的 SHA（更新時必須）
+  var sha=null;
+  try{
+    var getRes=await fetch(apiBase+'?ref='+c.branch,{headers:headers});
+    if(getRes.ok){ var info=await getRes.json(); sha=info.sha; }
+  }catch(e){}
+  // 推送
+  var body={ message:'更新 AI 小幫手設定', content:btoa(unescape(encodeURIComponent(json))), branch:c.branch };
+  if(sha) body.sha=sha;
+  var putRes=await fetch(apiBase,{method:'PUT',headers:headers,body:JSON.stringify(body)});
+  if(putRes.ok){
+    return {ok:true, msg:'✅ 已推送到 GitHub！GitHub Pages 約 1 分鐘後生效。'};
+  } else {
+    var err=await putRes.json().catch(function(){return{};});
+    return {ok:false, msg:'❌ 推送失敗：'+(err.message||putRes.status)};
+  }
+}
+eid('pushBotsBtn').addEventListener('click',async function(){
+  var msg=eid('pushMsg');
+  msg.className='pwd-msg'; msg.style.display='block'; msg.textContent='⏳ 推送中...';
+  var result=await pushToGitHub();
+  msg.className='pwd-msg '+(result.ok?'ok':'err');
+  msg.textContent=result.msg;
+});
+
+// ─── 下載 bots-config.json ───
+eid('exportBotsBtn').addEventListener('click',function(){
+  var cfg={ adminPassword: getPwd(), bots: getBots() };
+  var json=JSON.stringify(cfg,null,2);
+  var blob=new Blob([json],{type:'application/json;charset=utf-8;'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='bots-config.json'; a.click();
 });
 
 // ─── GAS URL 設定 ───
