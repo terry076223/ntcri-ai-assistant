@@ -7,7 +7,7 @@
       "icon": "🏺",
       "description": "詢問各類工藝材料、工具使用方式及技法",
       "active": true,
-      "apiUrl": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AQ.Ab8RN6JrYmOP0J_3pbI50ze4oxDtbOuXXBW0XgrvteEu8niUyw",
+      "apiUrl": "",
       "apiToken": "",
       "customHeaders": "",
       "requestTemplate": "{\"contents\":[{\"parts\":[{\"text\":\"{{message}}\"}]}]}",
