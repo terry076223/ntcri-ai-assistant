@@ -791,7 +791,11 @@ async function pushToGitHub(){
   if(!c.token||!c.owner||!c.repo){
     return {ok:false, msg:'請先填寫 GitHub 設定（Token、帳號、Repository）'};
   }
-  var cfg={ adminPassword: getPwd(), bots: getBots() };
+  // API Key / URL 不推送到 GitHub（安全考量，每台電腦在 admin.html 各自設定）
+  var safeBots=getBots().map(function(b){
+    return Object.assign({},b,{apiUrl:'',apiToken:''});
+  });
+  var cfg={ adminPassword: getPwd(), bots: safeBots };
   var json=JSON.stringify(cfg,null,2);
   var apiBase='https://api.github.com/repos/'+c.owner+'/'+c.repo+'/contents/'+c.path;
   var headers={ 'Authorization':'token '+c.token, 'Content-Type':'application/json' };
